@@ -12,21 +12,20 @@ export function App() {
   const { data: employees, ...employeeUtils } = useEmployees()
   const { data: paginatedTransactions, ...paginatedTransactionsUtils } = usePaginatedTransactions()
   const { data: transactionsByEmployee, ...transactionsByEmployeeUtils } = useTransactionsByEmployee()
-  const [isLoading, setIsLoading] = useState(false)
+  const [transactions, setTransactions] = useState<any[]>([])
+  const [isEmployeesLoading, setIsEmployeesLoading] = useState(true)
+  const [isAtEndOfData, setIsAtEndOfData] = useState(false)
 
-  const transactions = useMemo(
-    () => paginatedTransactions?.data ?? transactionsByEmployee ?? null,
+  const transactionsData = useMemo(
+    () => paginatedTransactions?.data ?? transactionsByEmployee ?? [],
     [paginatedTransactions, transactionsByEmployee]
   )
 
   const loadAllTransactions = useCallback(async () => {
-    setIsLoading(true)
     transactionsByEmployeeUtils.invalidateData()
 
     await employeeUtils.fetchAll()
     await paginatedTransactionsUtils.fetchAll()
-
-    setIsLoading(false)
   }, [employeeUtils, paginatedTransactionsUtils, transactionsByEmployeeUtils])
 
   const loadTransactionsByEmployee = useCallback(
@@ -43,6 +42,30 @@ export function App() {
     }
   }, [employeeUtils.loading, employees, loadAllTransactions])
 
+  useEffect(() => {
+    if (employeeUtils.loading) {
+      setIsEmployeesLoading(true)
+    } else if (employees !== null) {
+      setIsEmployeesLoading(false)
+    }
+  }, [employeeUtils.loading, employees])
+
+  useEffect(() => {
+    console.log(paginatedTransactions);
+  
+    setTransactions((prevTransactions) => [...prevTransactions, ...transactionsData])
+  
+    if (paginatedTransactions?.nextPage === null) {
+      setIsAtEndOfData(true);
+    } else {
+      setIsAtEndOfData(false);
+    }
+  }, [transactionsData, paginatedTransactions]);
+
+  const isViewMoreVisible = useMemo(() => {
+    return transactions !== null && !transactionsByEmployee && !isAtEndOfData
+  }, [transactions, transactionsByEmployee, isAtEndOfData])
+
   return (
     <Fragment>
       <main className="MainContainer">
@@ -51,7 +74,7 @@ export function App() {
         <hr className="RampBreak--l" />
 
         <InputSelect<Employee>
-          isLoading={isLoading}
+          isLoading={isEmployeesLoading}
           defaultValue={EMPTY_EMPLOYEE}
           items={employees === null ? [] : [EMPTY_EMPLOYEE, ...employees]}
           label="Filter by employee"
@@ -61,11 +84,11 @@ export function App() {
             label: `${item.firstName} ${item.lastName}`,
           })}
           onChange={async (newValue) => {
-            if (newValue === null) {
-              return
+            if (newValue === null || newValue.id === EMPTY_EMPLOYEE.id) {
+              await loadAllTransactions()
+            } else {
+              await loadTransactionsByEmployee(newValue.id)
             }
-
-            await loadTransactionsByEmployee(newValue.id)
           }}
         />
 
@@ -74,10 +97,10 @@ export function App() {
         <div className="RampGrid">
           <Transactions transactions={transactions} />
 
-          {transactions !== null && (
+          {isViewMoreVisible && (
             <button
               className="RampButton"
-              disabled={paginatedTransactionsUtils.loading}
+              disabled={paginatedTransactionsUtils.loading || isAtEndOfData}
               onClick={async () => {
                 await loadAllTransactions()
               }}
